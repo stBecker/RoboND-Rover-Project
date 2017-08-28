@@ -53,7 +53,7 @@ class RoverState():
         self.nav_dists = None # Distances of navigable terrain pixels
         self.ground_truth = ground_truth_3d # Ground truth worldmap
         self.mode = 'forward' # Current mode (can be forward or stop)
-        self.throttle_set = 0.2 # Throttle setting when accelerating
+        self.throttle_set = 0.2 #0.2 # Throttle setting when accelerating
         self.brake_set = 10 # Brake setting when braking
         # The stop_forward and go_forward fields below represent total count
         # of navigable terrain pixels.  This is a very crude form of knowing
@@ -61,7 +61,7 @@ class RoverState():
         # get creative in adding new fields or modifying these!
         self.stop_forward = 50 # Threshold to initiate stopping
         self.go_forward = 500 # Threshold to go forward again
-        self.max_vel = 2 # Maximum velocity (meters/second)
+        self.max_vel = 2 #2 # Maximum velocity (meters/second)
         # Image output from perception step
         # Update this image to display your intermediate analysis steps
         # on screen in autonomous mode
@@ -87,24 +87,27 @@ frame_counter = 0
 second_counter = time.time()
 fps = None
 
-
+should_print = False
 # Define telemetry function for what to do with incoming data
 @sio.on('telemetry')
 def telemetry(sid, data):
 
-    global frame_counter, second_counter, fps
+    global frame_counter, second_counter, fps, should_print
     frame_counter+=1
     # Do a rough calculation of frames per second (FPS)
     if (time.time() - second_counter) > 1:
         fps = frame_counter
         frame_counter = 0
         second_counter = time.time()
-    print("Current FPS: {}".format(fps))
+        should_print = True
+
+    if should_print:
+        print("Current FPS: {}".format(fps))
 
     if data:
         global Rover
         # Initialize / update Rover with current telemetry
-        Rover, image = update_rover(Rover, data)
+        Rover, image = update_rover(Rover, data, should_print=should_print)
 
         if np.isfinite(Rover.vel):
 
@@ -147,6 +150,8 @@ def telemetry(sid, data):
 
     else:
         sio.emit('manual', data={}, skip_sid=True)
+
+    should_print = False
 
 @sio.on('connect')
 def connect(sid, environ):
