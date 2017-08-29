@@ -46,6 +46,10 @@ class RoverState():
         self.pitch = None # Current pitch angle
         self.roll = None # Current roll angle
         self.vel = None # Current velocity
+        self.history = []
+        self.last_update_time = None
+        self.turn_yaw = 0
+        self.picking = False
         self.steer = 0 # Current steering angle
         self.throttle = 0 # Current throttle value
         self.brake = 0 # Current brake value
@@ -74,6 +78,7 @@ class RoverState():
         self.samples_to_find = 0 # To store the initial count of samples
         self.samples_located = 0 # To store number of samples located on map
         self.samples_collected = 0 # To count the number of samples collected
+        self.sample_locations_to_find = None
         self.near_sample = 0 # Will be set to telemetry value data["near_sample"]
         self.picking_up = 0 # Will be set to telemetry value data["picking_up"]
         self.send_pickup = False # Set to True to trigger rock pickup
@@ -101,8 +106,8 @@ def telemetry(sid, data):
         second_counter = time.time()
         should_print = True
 
-    if should_print:
-        print("Current FPS: {}".format(fps))
+    # if should_print:
+    #     print("Current FPS: {}".format(fps))
 
     if data:
         global Rover
@@ -113,7 +118,7 @@ def telemetry(sid, data):
 
             # Execute the perception and decision steps to update the Rover's state
             Rover = perception_step(Rover)
-            Rover = decision_step(Rover)
+            Rover = decision_step(Rover, should_print)
 
             # Create output images to send to server
             out_image_string1, out_image_string2 = create_output_images(Rover)
