@@ -49,8 +49,6 @@ class RoverState():
         self.history = []
         self.last_update_time = time.time()
         self.second_counter = time.time()
-        self.turn_yaw = 0
-        self.picking = False
         self.steer = 0 # Current steering angle
         self.throttle = 0 # Current throttle value
         self.brake = 0 # Current brake value
@@ -70,8 +68,6 @@ class RoverState():
         # get creative in adding new fields or modifying these!
         self.stop_forward = 50 # Threshold to initiate stopping
         self.go_forward = 500 # Threshold to go forward again
-        self.closest_obstacle_dist_thresh = 20
-        self.mean_dist_thresh = 20
         self.max_vel = 3 #2 # Maximum velocity (meters/second)
         # Image output from perception step
         # Update this image to display your intermediate analysis steps
