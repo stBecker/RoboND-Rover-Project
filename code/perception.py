@@ -156,4 +156,14 @@ def perception_step(Rover):
     Rover.nav_dists = rover_centric_pixel_distances
     Rover.nav_angles = rover_centric_angles
 
+    x_pixel, y_pixel = rover_coords(rock)
+    rover_centric_pixel_distances, rover_centric_angles = to_polar_coords(x_pixel, y_pixel)
+    Rover.rock_dists = rover_centric_pixel_distances
+    Rover.rock_angles = rover_centric_angles
+
+    x_pixel, y_pixel = rover_coords(obstacles)
+    rover_centric_pixel_distances, rover_centric_angles = to_polar_coords(x_pixel, y_pixel)
+    Rover.obstacles_dists = rover_centric_pixel_distances
+    Rover.obstacles_angles = rover_centric_angles
+
     return Rover

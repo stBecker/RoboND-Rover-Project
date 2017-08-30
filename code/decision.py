@@ -278,24 +278,34 @@ def decision_step_v0(Rover, updated=False):
     return Rover
 
 
-def decision_step(Rover, updated=False):
+def decision_step(Rover):
     # Implement conditionals to decide what to do given perception data
     # Here you're all set up with some basic functionality but you'll need to
     # improve on this decision tree to do a good job of navigating autonomously!
-    if updated:
+    if (time.time() - Rover.second_counter) > 1:
+        Rover.second_counter = time.time()
         print(Rover.mode)
         Rover.history.append(Rover.pos)
 
+        for k,v in Rover.__dict__.items():
+            if not isinstance(v, iter):
+                print(k,v)
+
+    # todo:
+    # - avoid obstacles
+    # - locate samples (perception)
+    # - wall crawler
+
     # Example:
     # Check if we have vision data to make decisions with
-    if Rover.nav_angles is  None:
+    if Rover.nav_angles is None:
         Rover.throttle = Rover.throttle_set
         Rover.steer = 0
         Rover.brake = 0
         return Rover
 
-    if Rover.sample_locations_to_find is None:
-        Rover.sample_locations_to_find = np.copy(Rover.samples_pos)
+    # if Rover.sample_locations_to_find is None:
+    #     Rover.sample_locations_to_find = np.copy(Rover.samples_pos)
 
     if Rover.picking_up:
         # do nothing
@@ -305,38 +315,50 @@ def decision_step(Rover, updated=False):
         Rover.picking = False
         return Rover
 
-    if not Rover.mode == "stop" and is_stuck(Rover):
-        Rover.mode = "reverse"
+    # If in a state where want to pickup a rock send pickup command
+    if Rover.near_sample and Rover.vel == 0 and not Rover.picking_up:
+        Rover.send_pickup = True
+        # if not Rover.picking:
+        #     print("remove found sample from list")
+        #     dist, sample_direction, idx = find_nearest_sample(Rover)
+        #     xpos = np.delete(Rover.sample_locations_to_find[0], [idx])
+        #     ypos = np.delete(Rover.sample_locations_to_find[1], [idx])
+        #     Rover.sample_locations_to_find = (xpos, ypos)
+        Rover.mode = 'stop'
+        # Rover.picking = True
+        return Rover
 
-    elif Rover.mode not in ("locate_sample", "stop", "reverse"):
-        if near_sample(Rover):
-            print("found sample")
-            Rover.mode = "locate_sample"
+    if Rover.near_sample:
+        # print("at sample location")
+        Rover.throttle = 0
+        Rover.brake = 100
+        Rover.steer = 0
+        return Rover
+        # Rover.mode = 'stop'
+
+    if sample_detected(Rover):
+        Rover.mode = "approach_sample"
+
+    elif path_is_blocked(Rover):
+        Rover.mode = "stop"
+
+    elif (not Rover.mode == "stop" or abs(Rover.steer) > 2) and is_stuck(Rover):
+        Rover.mode = "reverse"
+        Rover.last_update_time = time.time()
+
+    # elif Rover.mode not in ("locate_sample", "stop", "reverse"):
+    #     if near_sample(Rover):
+    #         print("found sample")
+    #         Rover.mode = "locate_sample"
 
     action = {
         "forward": forward_v1,
         "stop": stop_v1,
-        "locate_sample": locate_sample,
+        # "locate_sample": locate_sample,
         "reverse": reverse,
+        "approach_sample": approach_sample,
     }[Rover.mode]
     Rover = action(Rover)
-
-    if Rover.near_sample:
-        print("at sample location")
-        Rover.throttle = 0
-        Rover.brake = Rover.brake_set
-        Rover.steer = 0
-        Rover.mode = 'stop'
-
-    # If in a state where want to pickup a rock send pickup command
-    if Rover.near_sample and Rover.vel == 0 and not Rover.picking_up:
-        Rover.send_pickup = True
-        if not Rover.picking:
-            print("remove found sample from list")
-            dist, sample_direction, idx = find_nearest_sample(Rover)
-            Rover.sample_locations_to_find = np.delete(Rover.sample_locations_to_find, [idx])
-        Rover.mode = 'stop'
-        Rover.picking = True
 
     return Rover
 
@@ -344,26 +366,80 @@ def decision_step(Rover, updated=False):
 def reverse(Rover):
     Rover.brake = 0
     Rover.throttle = -1
-    if not Rover.last_update_time:
-        Rover.last_update_time = time.time()
 
     if time.time() - Rover.last_update_time > 2:
-        Rover.last_update_time = None
+        Rover.last_update_time = time.time()
         Rover.mode = "forward"
-        Rover.throttle = 0.5
+        Rover.throttle = Rover.throttle_set
 
     return Rover
 
 
-def is_stuck(Rover):
-    if len(Rover.history) > 10:
-        xpos = Rover.history[-7][0] - Rover.pos[0]
-        ypos = Rover.history[-7][1] - Rover.pos[1]
-        dist = np.sqrt(xpos ** 2 + ypos ** 2)
+def sample_detected(Rover):
+    if Rover.rock_angles.size > 0:
+        return True
+    return False
 
-        # not moving
-        if dist < 0.05:
+
+def approach_sample(Rover):
+    if Rover.rock_angles.size == 0:
+        # lost visual contact with sample
+        Rover.mode = "stop"
+        return Rover
+
+    angles_in_deg = np.rad2deg(Rover.rock_angles)
+    rock_direction = np.mean(angles_in_deg)
+
+    # check if facing in the right direction
+    if -5 < rock_direction < 5:
+        # facing in the right direction, approach
+        Rover.brake = 0
+        Rover.throttle = Rover.throttle_set
+
+    else:
+        # stop and turn
+        if Rover.vel > 0.2:
+            Rover.brake = Rover.brake_set
+            Rover.throttle = 0
+        else:
+            Rover.brake = 0
+            Rover.throttle = 0
+
+    Rover.steer = np.clip(rock_direction, -15, 15)
+
+    return Rover
+
+
+def path_is_blocked(Rover):
+    angles_in_deg = np.rad2deg(Rover.obstacles_angles)
+    relevant_angles = angles_in_deg >= -15 & angles_in_deg <= 15
+    relevant_dist = Rover.obstacles_dists[relevant_angles]
+
+    if relevant_dist.size > 0:
+        closest_obstacle_dist = np.min(relevant_dist)
+        if closest_obstacle_dist < Rover.closest_obstacle_dist_thresh:
             return True
+
+    return False
+
+
+def is_stuck(Rover):
+    if time.time() - Rover.last_update_time > 7:
+        if len(Rover.history) > 10:
+            xmean = 0.0
+            ymean = 0.0
+            for x, y in Rover.history[-3:]:
+                xmean += x
+                ymean += y
+            xmean /= len(Rover.history[-3:])
+            ymean /= len(Rover.history[-3:])
+            xpos = xmean - Rover.pos[0]
+            ypos = ymean - Rover.pos[1]
+            dist = np.sqrt(xpos ** 2 + ypos ** 2)
+
+            # not moving
+            if dist < 0.05:
+                return True
     return False
 
 
@@ -376,6 +452,7 @@ def determine_steer(Rover, direction):
 
     return angle
 
+
 def find_nearest_sample(Rover):
     xpos = Rover.sample_locations_to_find[0] - Rover.pos[0]
     ypos = Rover.sample_locations_to_find[1] - Rover.pos[1]
@@ -385,26 +462,27 @@ def find_nearest_sample(Rover):
     idx = np.argmin(dist)
     return dist[idx], angles[idx], idx
 
+
 def locate_sample(Rover):
     dist, sample_direction, idx = find_nearest_sample(Rover)
     # turn until direction matches
     steer = determine_steer(Rover, sample_direction)
     if abs(steer) > 5:
         # break if still moving
-        if Rover.vel > 0.01:
+        if Rover.vel > 0.1:
             Rover.throttle = 0
             # Set brake to stored brake value
             Rover.brake = Rover.brake_set
             Rover.steer = 0
             return Rover
 
-        print(steer)
+        # print(steer)
         Rover.brake = 0
         Rover.steer = np.clip(steer, -15, 15)
         return Rover
 
     # direction is ok
-    print("ok")
+    # print("ok")
     Rover.brake = 0
     Rover.steer = 0
     Rover.throttle = Rover.throttle_set
@@ -420,6 +498,7 @@ def near_sample(Rover):
         return True
     else:
         return False
+
 
 def forward_v1(Rover):
     # Check the extent of navigable terrain
@@ -455,14 +534,20 @@ def stop_v1(Rover):
     # If we're not moving (vel < 0.2) then do something else
     elif Rover.vel <= 0.2:
         # Now we're stopped and we have vision data to see if there's a path forward
-        if len(Rover.nav_angles) < Rover.go_forward:
+        if len(Rover.nav_angles) < Rover.go_forward or path_is_blocked(Rover):
             Rover.throttle = 0
             # Release the brake to allow turning
             Rover.brake = 0
             # Turn range is +/- 15 degrees, when stopped the next line will induce 4-wheel turning
-            Rover.steer = -15  # Could be more clever here about which way to turn
+            # Rover.steer = -15  # Could be more clever here about which way to turn
+            angles_in_deg = np.rad2deg(Rover.nav_angles)
+            if np.sum(angles_in_deg >= 0) > np.sum(angles_in_deg < 0):
+                Rover.steer = 15
+            else:
+                Rover.steer = -15
+
         # If we're stopped but see sufficient navigable terrain in front then go!
-        if len(Rover.nav_angles) >= Rover.go_forward:
+        else:
             # Set throttle back to stored value
             Rover.throttle = Rover.throttle_set
             # Release the brake
@@ -472,4 +557,3 @@ def stop_v1(Rover):
             Rover.mode = 'forward'
 
     return Rover
-

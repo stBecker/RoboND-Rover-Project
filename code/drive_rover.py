@@ -47,7 +47,8 @@ class RoverState():
         self.roll = None # Current roll angle
         self.vel = None # Current velocity
         self.history = []
-        self.last_update_time = None
+        self.last_update_time = time.time()
+        self.second_counter = time.time()
         self.turn_yaw = 0
         self.picking = False
         self.steer = 0 # Current steering angle
@@ -55,9 +56,13 @@ class RoverState():
         self.brake = 0 # Current brake value
         self.nav_angles = None # Angles of navigable terrain pixels
         self.nav_dists = None # Distances of navigable terrain pixels
+        self.rock_dists = None # Distances of rock terrain pixels
+        self.rock_angles = None # Angles of rock terrain pixels
+        self.obstacles_dists = None # Angles of rock terrain pixels
+        self.obstacles_angles = None # Angles of rock terrain pixels
         self.ground_truth = ground_truth_3d # Ground truth worldmap
         self.mode = 'forward' # Current mode (can be forward or stop)
-        self.throttle_set = 0.2 #0.2 # Throttle setting when accelerating
+        self.throttle_set = 0.5 #0.2 #0.2 # Throttle setting when accelerating
         self.brake_set = 10 # Brake setting when braking
         # The stop_forward and go_forward fields below represent total count
         # of navigable terrain pixels.  This is a very crude form of knowing
@@ -65,7 +70,8 @@ class RoverState():
         # get creative in adding new fields or modifying these!
         self.stop_forward = 50 # Threshold to initiate stopping
         self.go_forward = 500 # Threshold to go forward again
-        self.max_vel = 2 #2 # Maximum velocity (meters/second)
+        self.closest_obstacle_dist_thresh = 50
+        self.max_vel = 3 #2 # Maximum velocity (meters/second)
         # Image output from perception step
         # Update this image to display your intermediate analysis steps
         # on screen in autonomous mode
@@ -92,33 +98,30 @@ frame_counter = 0
 second_counter = time.time()
 fps = None
 
-should_print = False
 # Define telemetry function for what to do with incoming data
 @sio.on('telemetry')
 def telemetry(sid, data):
 
-    global frame_counter, second_counter, fps, should_print
+    global frame_counter, second_counter, fps
     frame_counter+=1
     # Do a rough calculation of frames per second (FPS)
     if (time.time() - second_counter) > 1:
         fps = frame_counter
         frame_counter = 0
         second_counter = time.time()
-        should_print = True
 
-    # if should_print:
-    #     print("Current FPS: {}".format(fps))
+    print("Current FPS: {}".format(fps))
 
     if data:
         global Rover
         # Initialize / update Rover with current telemetry
-        Rover, image = update_rover(Rover, data, should_print=should_print)
+        Rover, image = update_rover(Rover, data)
 
         if np.isfinite(Rover.vel):
 
             # Execute the perception and decision steps to update the Rover's state
             Rover = perception_step(Rover)
-            Rover = decision_step(Rover, should_print)
+            Rover = decision_step(Rover)
 
             # Create output images to send to server
             out_image_string1, out_image_string2 = create_output_images(Rover)
@@ -156,7 +159,6 @@ def telemetry(sid, data):
     else:
         sio.emit('manual', data={}, skip_sid=True)
 
-    should_print = False
 
 @sio.on('connect')
 def connect(sid, environ):
