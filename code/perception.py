@@ -91,6 +91,10 @@ def perspect_transform(img, src, dst):
     return warped
 
 
+def close_to_zero_deg(angle, max_error_deg):
+    return angle < max_error_deg or angle > (360.0 - max_error_deg)
+
+
 # Apply the above functions in succession and update the Rover state accordingly
 def perception_step(Rover):
     # Perform perception steps to update Rover()
@@ -145,7 +149,10 @@ def perception_step(Rover):
         # Example: Rover.worldmap[obstacle_y_world, obstacle_x_world, 0] += 1
         #          Rover.worldmap[rock_y_world, rock_x_world, 1] += 1
         #          Rover.worldmap[navigable_y_world, navigable_x_world, 2] += 1
-        Rover.worldmap[y_pix_world, x_pix_world, i] += 1
+        if close_to_zero_deg(Rover.pitch, 1.3) and close_to_zero_deg(Rover.roll, 1):
+            Rover.worldmap[y_pix_world, x_pix_world, i] += 1
+
+        # print(Rover.pitch,"\t",Rover.roll)
 
         # 8) Convert rover-centric pixel positions to polar coordinates
         # Update Rover pixel distances and angles

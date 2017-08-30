@@ -70,7 +70,8 @@ class RoverState():
         # get creative in adding new fields or modifying these!
         self.stop_forward = 50 # Threshold to initiate stopping
         self.go_forward = 500 # Threshold to go forward again
-        self.closest_obstacle_dist_thresh = 50
+        self.closest_obstacle_dist_thresh = 20
+        self.mean_dist_thresh = 20
         self.max_vel = 3 #2 # Maximum velocity (meters/second)
         # Image output from perception step
         # Update this image to display your intermediate analysis steps
@@ -110,7 +111,7 @@ def telemetry(sid, data):
         frame_counter = 0
         second_counter = time.time()
 
-    print("Current FPS: {}".format(fps))
+    # print("Current FPS: {}".format(fps))
 
     if data:
         global Rover

@@ -278,6 +278,8 @@ def decision_step_v0(Rover, updated=False):
     return Rover
 
 
+import pickle
+
 def decision_step(Rover):
     # Implement conditionals to decide what to do given perception data
     # Here you're all set up with some basic functionality but you'll need to
@@ -287,9 +289,13 @@ def decision_step(Rover):
         print(Rover.mode)
         Rover.history.append(Rover.pos)
 
-        for k,v in Rover.__dict__.items():
-            if not isinstance(v, iter):
-                print(k,v)
+        # with open("data.pickle", 'wb') as f:
+        #     pickle.dump(Rover, f)
+
+        # for k, v in Rover.__dict__.items():
+        #     if isinstance(v, np.ndarray) or isinstance(v, list):
+        #         continue
+        #     print(k, "\t\t", v)
 
     # todo:
     # - avoid obstacles
@@ -376,7 +382,7 @@ def reverse(Rover):
 
 
 def sample_detected(Rover):
-    if Rover.rock_angles.size > 0:
+    if Rover.rock_angles.size > 7:
         return True
     return False
 
@@ -390,35 +396,46 @@ def approach_sample(Rover):
     angles_in_deg = np.rad2deg(Rover.rock_angles)
     rock_direction = np.mean(angles_in_deg)
 
-    # check if facing in the right direction
-    if -5 < rock_direction < 5:
-        # facing in the right direction, approach
-        Rover.brake = 0
-        Rover.throttle = Rover.throttle_set
-
+    # slow down and approach
+    if Rover.vel > 0.8:
+        Rover.brake = Rover.brake_set
+        Rover.throttle = 0
     else:
-        # stop and turn
-        if Rover.vel > 0.2:
-            Rover.brake = Rover.brake_set
-            Rover.throttle = 0
-        else:
-            Rover.brake = 0
-            Rover.throttle = 0
+        Rover.brake = 0
+        Rover.throttle = 0.2
 
     Rover.steer = np.clip(rock_direction, -15, 15)
+    print(Rover.steer)
 
     return Rover
 
 
 def path_is_blocked(Rover):
     angles_in_deg = np.rad2deg(Rover.obstacles_angles)
-    relevant_angles = angles_in_deg >= -15 & angles_in_deg <= 15
-    relevant_dist = Rover.obstacles_dists[relevant_angles]
+    # consider only obstacles in front of the rover
+    relevant_angles = (angles_in_deg >= -10) & (angles_in_deg <= 10)
+    relevant_dist = (Rover.obstacles_dists > 8) & (Rover.obstacles_dists < 30)
+    relevant = relevant_angles & relevant_dist
+    dist = Rover.obstacles_dists[relevant]
+    angles = angles_in_deg[relevant]
+
+    if angles.size > 50:
+        # print("blocked")
+        return True
+
+    return False
+
+def path_is_blocked_v2(Rover):
+    angles_in_deg = np.rad2deg(Rover.nav_angles)
+    relevant_angles = (angles_in_deg >= Rover.steer - 5.0) & (angles_in_deg <= Rover.steer + 5.0)
+    relevant_dist = Rover.nav_dists[relevant_angles]
 
     if relevant_dist.size > 0:
-        closest_obstacle_dist = np.min(relevant_dist)
-        if closest_obstacle_dist < Rover.closest_obstacle_dist_thresh:
-            return True
+        mean_dist = np.mean(relevant_dist)
+        # if mean_dist < Rover.mean_dist_thresh:
+        #     print(mean_dist)
+            # return True
+        print(mean_dist)
 
     return False
 
@@ -539,12 +556,12 @@ def stop_v1(Rover):
             # Release the brake to allow turning
             Rover.brake = 0
             # Turn range is +/- 15 degrees, when stopped the next line will induce 4-wheel turning
-            # Rover.steer = -15  # Could be more clever here about which way to turn
-            angles_in_deg = np.rad2deg(Rover.nav_angles)
-            if np.sum(angles_in_deg >= 0) > np.sum(angles_in_deg < 0):
-                Rover.steer = 15
-            else:
-                Rover.steer = -15
+            Rover.steer = -15  # Could be more clever here about which way to turn
+            # angles_in_deg = np.rad2deg(Rover.nav_angles)
+            # if np.sum(angles_in_deg >= 0) > np.sum(angles_in_deg < 0):
+            #     Rover.steer = 15
+            # else:
+            #     Rover.steer = -15
 
         # If we're stopped but see sufficient navigable terrain in front then go!
         else:
