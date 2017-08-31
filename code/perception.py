@@ -34,16 +34,14 @@ def color_thresh_rock(rock_img):
     # convert color space to HSV
     img = cv2.cvtColor(rock_img, cv2.COLOR_BGR2HSV)
 
-    above_thresh = (img[:, :, 0] >= hsv_lower[0]) \
-                   & (img[:, :, 1] >= hsv_lower[1]) \
-                   & (img[:, :, 2] >= hsv_lower[2])
+    lower_rock = np.array([92, 82, 126])
+    upper_rock = np.array([104, 255, 218])
 
-    below_thresh = (img[:, :, 0] <= hsv_upper[0]) \
-                   & (img[:, :, 1] <= hsv_upper[1]) \
-                   & (img[:, :, 2] <= hsv_upper[2])
-    tresh = above_thresh & below_thresh
+    # Threshold the HSV image to get only rock-like colors
+    mask = cv2.inRange(img, lower_rock, upper_rock)
+
     # Index the array of zeros with the boolean array and set to 1
-    color_select[tresh] = 1
+    color_select[mask] = 1
     # Return the binary image
     return color_select
 
