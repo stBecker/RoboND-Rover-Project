@@ -4,7 +4,7 @@ import cv2
 
 # Identify pixels above the threshold
 # Threshold of RGB > 160 does a nice job of identifying ground pixels only
-def color_thresh(img, rgb_thresh=(160, 160, 160), rgb_upper_bound=None, invert=False):
+def color_thresh(img, rgb_thresh=(160, 160, 160), invert=False):
     # Create an array of zeros same xy size as img, but single channel
     # dtype is bool for binary image
     color_select = np.zeros_like(img[:, :, 0], dtype=np.bool)
@@ -15,15 +15,35 @@ def color_thresh(img, rgb_thresh=(160, 160, 160), rgb_upper_bound=None, invert=F
                    & (img[:, :, 1] > rgb_thresh[1]) \
                    & (img[:, :, 2] > rgb_thresh[2])
 
-    if rgb_upper_bound:
-        below_thresh = (img[:, :, 0] < rgb_upper_bound[0]) \
-                       & (img[:, :, 1] < rgb_upper_bound[1]) \
-                       & (img[:, :, 2] < rgb_upper_bound[2])
-        above_thresh = above_thresh & below_thresh
     # Index the array of zeros with the boolean array and set to 1
     color_select[above_thresh] = 1
     if invert:
         color_select = ~color_select
+    # Return the binary image
+    return color_select
+
+
+def color_thresh_rock(rock_img):
+    # Create an array of zeros same xy size as img, but single channel
+    # dtype is bool for binary image
+    color_select = np.zeros_like(rock_img[:, :, 0], dtype=np.bool)
+
+    hsv_lower = (92, 82, 126)
+    hsv_upper = (104, 255, 218)
+
+    # convert color space to HSV
+    img = cv2.cvtColor(rock_img, cv2.COLOR_BGR2HSV)
+
+    above_thresh = (img[:, :, 0] >= hsv_lower[0]) \
+                   & (img[:, :, 1] >= hsv_lower[1]) \
+                   & (img[:, :, 2] >= hsv_lower[2])
+
+    below_thresh = (img[:, :, 0] <= hsv_upper[0]) \
+                   & (img[:, :, 1] <= hsv_upper[1]) \
+                   & (img[:, :, 2] <= hsv_upper[2])
+    tresh = above_thresh & below_thresh
+    # Index the array of zeros with the boolean array and set to 1
+    color_select[tresh] = 1
     # Return the binary image
     return color_select
 
@@ -122,11 +142,7 @@ def perception_step(Rover):
     warped = perspect_transform(image, source, destination)
 
     # 3) Apply color threshold to identify navigable terrain/obstacles/rock samples
-    rock_settings = (
-        (130, 105, 0),
-        (210, 185, 90),
-    )
-    rock = color_thresh(warped, rgb_thresh=rock_settings[0], rgb_upper_bound=rock_settings[1])
+    rock = color_thresh_rock(warped)
     navigable = color_thresh(warped)
     obstacles = color_thresh(warped, invert=True)
     terrain_types = (obstacles, rock, navigable)
