@@ -46,10 +46,12 @@ class RoverState():
         self.pitch = None # Current pitch angle
         self.roll = None # Current roll angle
         self.vel = None # Current velocity
-        self.history = []
         self.last_update_time = time.time()
+        self.last_pos = (0, 0)
         self.second_counter = time.time()
         self.steer = 0 # Current steering angle
+        self.previous_steer = 0 # Current steering angle
+        self.steer_set = 0.3 # Current steering angle
         self.throttle = 0 # Current throttle value
         self.brake = 0 # Current brake value
         self.nav_angles = None # Angles of navigable terrain pixels
@@ -106,8 +108,7 @@ def telemetry(sid, data):
         fps = frame_counter
         frame_counter = 0
         second_counter = time.time()
-
-    # print("Current FPS: {}".format(fps))
+        print("Current FPS: {}".format(fps))
 
     if data:
         global Rover

@@ -12,7 +12,6 @@ def decision_step(Rover):
     if (time.time() - Rover.second_counter) > 1:
         Rover.second_counter = time.time()
         print(Rover.mode)
-        Rover.history.append(Rover.pos)
 
         # import pickle
         # with open("data.pickle", 'wb') as f:
@@ -69,6 +68,17 @@ def decision_step(Rover):
     }[Rover.mode]
     Rover = action(Rover)
 
+    steer_diff = abs(Rover.steer - Rover.previous_steer)
+    if steer_diff > Rover.steer_set:
+        # smooth out steering angle
+        if Rover.steer >= Rover.previous_steer:
+            # turning left
+            Rover.steer = Rover.previous_steer + Rover.steer_set
+        else:
+            Rover.steer = Rover.previous_steer - Rover.steer_set
+
+    Rover.previous_steer = Rover.steer
+
     return Rover
 
 
@@ -76,7 +86,9 @@ def reverse(Rover):
     Rover.brake = 0
     Rover.throttle = -1
 
-    if time.time() - Rover.last_update_time > 2:
+    # todo: try to turn as well if still no movement
+
+    if time.time() - Rover.last_update_time > 3:
         Rover.last_update_time = time.time()
         Rover.mode = "forward"
         Rover.throttle = Rover.throttle_set
@@ -93,7 +105,7 @@ def sample_detected(Rover):
 def approach_sample(Rover):
     if Rover.rock_angles.size == 0:
         # lost visual contact with sample
-        Rover.mode = "stop"
+        Rover.mode = "forward"
         return Rover
 
     angles_in_deg = np.rad2deg(Rover.rock_angles)
@@ -101,13 +113,14 @@ def approach_sample(Rover):
 
     # slow down and approach
     if Rover.vel > 0.8:
-        Rover.brake = Rover.brake_set
+        Rover.brake = 0.5
         Rover.throttle = 0
     else:
         Rover.brake = 0
-        Rover.throttle = 0.2
+        Rover.throttle = 0.3
 
     Rover.steer = np.clip(rock_direction, -15, 15)
+    # print(Rover.steer)
 
     return Rover
 
@@ -128,22 +141,20 @@ def path_is_blocked(Rover):
 
 
 def is_stuck(Rover):
-    if time.time() - Rover.last_update_time > 7:
-        if len(Rover.history) > 10:
-            xmean = 0.0
-            ymean = 0.0
-            for x, y in Rover.history[-3:]:
-                xmean += x
-                ymean += y
-            xmean /= len(Rover.history[-3:])
-            ymean /= len(Rover.history[-3:])
-            xpos = xmean - Rover.pos[0]
-            ypos = ymean - Rover.pos[1]
-            dist = np.sqrt(xpos ** 2 + ypos ** 2)
+    if time.time() - Rover.last_update_time > 15:
+        # how far have we moved within the last x seconds
+        xpos = Rover.last_pos[0] - Rover.pos[0]
+        ypos = Rover.last_pos[1] - Rover.pos[1]
+        dist = np.sqrt(xpos ** 2 + ypos ** 2)
 
-            # not moving
-            if dist < 0.05:
-                return True
+        # update values
+        Rover.last_update_time = time.time()
+        Rover.last_pos = Rover.pos
+
+        # print("dist to POS: ",dist)
+        if dist < 15:
+            return True
+
     return False
 
 
@@ -186,7 +197,19 @@ def stop_v1(Rover):
             # Release the brake to allow turning
             Rover.brake = 0
             # Turn range is +/- 15 degrees, when stopped the next line will induce 4-wheel turning
-            Rover.steer = -15  # Could be more clever here about which way to turn
+            # Rover.steer = -15  # Could be more clever here about which way to turn
+            # steer towards more promising direction
+            angles_in_deg = np.rad2deg(Rover.nav_angles)
+            if Rover.previous_steer in (-15, 15):
+                # already committed to a steering direction, keep going
+                Rover.steer = Rover.previous_steer
+            else:
+                if np.sum(angles_in_deg >= 0) > np.sum(angles_in_deg < 0):
+                    Rover.steer = 15
+                    Rover.previous_steer = 15
+                else:
+                    Rover.steer = -15
+                Rover.previous_steer = -15
 
         # If we're stopped but see sufficient navigable terrain in front then go!
         else:

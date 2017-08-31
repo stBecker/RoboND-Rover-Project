@@ -25,6 +25,11 @@
 [image1]: color_tresh_navigable.png
 [image2]: color_tresh_obstacle.png
 [image3]: color_tresh_rock.png
+[image4]: screenshot_sim.png
+[image5]: full.png
+[image6]: angle.png
+[image7]: dist.png
+[image8]: angle_dist.png
 
 ## [Rubric](https://review.udacity.com/#!/rubrics/916/view) Points
 ### Here I will consider the rubric points individually and describe how I addressed each point in my implementation.  
@@ -168,7 +173,13 @@ Notable differences to the reference implementation:
         Rover = action(Rover)
 
 
-2. detect and approach samples
+2. Detect and approach samples
+
+When there are sufficiently many "rock" pixels detected (the threshold is > 1 to limit spurious detections),
+the rover enters the "approach_sample" mode. It steers in the general direction of the detected rock_angles and
+slowly (in order not to shot by the target) approaches the sample. When visual contact with the sample is lost, 
+change the mode.
+
 
         def sample_detected(Rover):
             if Rover.rock_angles.size > 7:
@@ -178,7 +189,7 @@ Notable differences to the reference implementation:
         def approach_sample(Rover):
             if Rover.rock_angles.size == 0:
                 # lost visual contact with sample
-                Rover.mode = "stop"
+                Rover.mode = "forward"
                 return Rover
 
             angles_in_deg = np.rad2deg(Rover.rock_angles)
@@ -186,18 +197,64 @@ Notable differences to the reference implementation:
 
             # slow down and approach
             if Rover.vel > 0.8:
-                Rover.brake = Rover.brake_set
+                Rover.brake = 0.5
                 Rover.throttle = 0
             else:
                 Rover.brake = 0
-                Rover.throttle = 0.2
+                Rover.throttle = 0.3
 
             Rover.steer = np.clip(rock_direction, -15, 15)
+            # print(Rover.steer)
 
             return Rover
 
 
-3. detect obstacles in the way
+3. Detect obstacles in the way
+
+The idea is to detect if there is an obstacle blocking the way. This is determined by checking for obstacle pixels
+within a certain area in front of the rover.
+
+Original obstacle detection
+
+        plt.imshow(obstacles)
+
+        # calculate distances to rover
+        m = np.zeros_like(obs2, dtype=np.float)
+        for i in range(m.shape[0]):
+            for j in range(m.shape[1]):
+                m[i][j] = np.sqrt((i - 160.0)**2 + (j-160.0)**2)
+
+        # calculate angles to rover
+        n = np.zeros_like(obs2, dtype=np.float)
+        for i in range(n.shape[0]):
+            for j in range(n.shape[1]):
+                n[i][j] = np.rad2deg(np.arctan2(j - 160.0, i - 160.0))
+
+![alt text][image5]
+
+Area within a certain angle
+
+        plt.imshow(obs2 & ((n < -160) | (n > 160)))
+
+![alt text][image6]
+
+Area within a certain radius
+
+        plt.imshow(obs2 & (m > 7) & (m < 40))
+
+![alt text][image7]
+
+The combination is relevant for navigation
+
+        plt.imshow(obs2 & (m > 7) & (m < 70) & ((n < -160) | (n > 160)))
+
+![alt text][image8]
+
+
+The implementation is given below. If there are enough obstacle pixels within the relevant area, assume the path to be blocked.
+"Relevant" is defined as having an angle between -10 and 10 degrees and being at least 8 pixels (the area directly in front of the rover
+is always detected as an obstacle, because we have no vision data for this area) but less than 30 pixels away from
+the rover.
 
         def path_is_blocked(Rover):
             angles_in_deg = np.rad2deg(Rover.obstacles_angles)
@@ -214,25 +271,27 @@ Notable differences to the reference implementation:
             return False
 
 
-4. determine if rover is stuck and back up to become unstuck
+4. Determine if rover is stuck and back up to become unstuck
+
+If the rover has not moved significantly within the last several seconds, it is probably stuck.
+In this case we put the rover in reverse for a few seconds.
+
 
         def is_stuck(Rover):
-            if time.time() - Rover.last_update_time > 7:
-                if len(Rover.history) > 10:
-                    xmean = 0.0
-                    ymean = 0.0
-                    for x, y in Rover.history[-3:]:
-                        xmean += x
-                        ymean += y
-                    xmean /= len(Rover.history[-3:])
-                    ymean /= len(Rover.history[-3:])
-                    xpos = xmean - Rover.pos[0]
-                    ypos = ymean - Rover.pos[1]
-                    dist = np.sqrt(xpos ** 2 + ypos ** 2)
+            if time.time() - Rover.last_update_time > 15:
+                # how far have we moved within the last x seconds
+                xpos = Rover.last_pos[0] - Rover.pos[0]
+                ypos = Rover.last_pos[1] - Rover.pos[1]
+                dist = np.sqrt(xpos ** 2 + ypos ** 2)
 
-                    # not moving
-                    if dist < 0.05:
-                        return True
+                # update values
+                Rover.last_update_time = time.time()
+                Rover.last_pos = Rover.pos
+
+                print("dist to POS: ",dist)
+                if dist < 15:
+                    return True
+
             return False
 
         def reverse(Rover):
@@ -246,17 +305,65 @@ Notable differences to the reference implementation:
 
             return Rover
 
+5. Smooth steering
+
+The Rover.steer value might change drastically (e.g. if there is a low number of nav_angles), which results in unstable navigation.
+By smoothing the steering angle, the driving behaviour is improved.
+
+        steer_diff = abs(Rover.steer - Rover.previous_steer)
+        if steer_diff > Rover.steer_set:
+            # smooth out steering angle
+            if Rover.steer >= Rover.previous_steer:
+                # turning left
+                Rover.steer = Rover.previous_steer + Rover.steer_set
+            else:
+                Rover.steer = Rover.previous_steer - Rover.steer_set
+
+        Rover.previous_steer = Rover.steer
+
+
+6. Turning when stopped
+
+Changed the default steer of -15 to a more clever solution:
+When there is more navigation data on the right, then turn to the right, else turn to the left.
+When we have committed to one direction, we keep going that way no matter what. This is necessary to prevent the rover from
+oscillating between left and right, e.g. if it has turned a bit to the left and suddenly there is more navigation data to the right.
+
+        if len(Rover.nav_angles) < Rover.go_forward or path_is_blocked(Rover):
+            Rover.throttle = 0
+            # Release the brake to allow turning
+            Rover.brake = 0
+            # Turn range is +/- 15 degrees, when stopped the next line will induce 4-wheel turning
+            # Rover.steer = -15  # Could be more clever here about which way to turn
+            # steer towards more promising direction
+            angles_in_deg = np.rad2deg(Rover.nav_angles)
+            if Rover.previous_steer in (-15, 15):
+                # already committed to a steering direction, keep going
+                Rover.steer = Rover.previous_steer
+            else:
+                if np.sum(angles_in_deg >= 0) > np.sum(angles_in_deg < 0):
+                    Rover.steer = 15
+                    Rover.previous_steer = 15
+                else:
+                    Rover.steer = -15
+                Rover.previous_steer = -15
 
 
 #### 2. Launching in autonomous mode your rover can navigate and map autonomously.  Explain your results and how you might improve them in your writeup.  
 
 **Note: running the simulator with different choices of resolution and graphics quality may produce different results, particularly on different machines!  Make a note of your simulator settings (resolution and graphics quality set on launch) and frames per second (FPS output to terminal by `drive_rover.py`) in your writeup when you submit the project so your reviewer can reproduce your results.**
 
+###### Specs
+- 1280 x 1024
+- Quality: Fantastic
+- FPS: 40 - 50
+
 Here I'll talk about the approach I took, what techniques I used, what worked and why, where the pipeline might fail and how I might improve it if I were going to pursue this project further.
 
+![alt text][image4]
 
 ###### Failed approaches
-1. clever turning when stopped:
+1. Clever turning when stopped:
 
         # Rover.steer = -15  # Could be more clever here about which way to turn
         angles_in_deg = np.rad2deg(Rover.nav_angles)
@@ -268,7 +375,7 @@ Here I'll talk about the approach I took, what techniques I used, what worked an
 Sometimes the rover would get stuck in front of an obstacle, with about an equal number of nav_angles in both directions.
 It would the oscillate between turning left and right, while the direction with more nav_angles would constantly flip.
 
-2. locate samples by checking defined positions:
+2. Locate samples by checking defined positions:
 
         if Rover.sample_locations_to_find is None:
             Rover.sample_locations_to_find = np.copy(Rover.samples_pos)
@@ -322,7 +429,7 @@ Use the sample locations stored in "Rover.sample_pos" to locate and approach sam
 Worked reasonably well, but was considered to be "cheating".
 
 
-3. wall crawler strategy:
+3. Wall crawler strategy:
 
 Find the furthest nav_angle to the right and determine if it's not that far to the right after all.
 
